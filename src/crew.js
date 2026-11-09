@@ -9,7 +9,7 @@ import readline from 'node:readline/promises'
 import pty from 'node-pty'
 import { ROOT, STATE_DIR, BRIDGE_PORT, loadConfig, saveConfig, loadPool, savePool, post } from './state.js'
 import { addBot } from './pool.js'
-import { slug, parseRoots } from './route.js'
+import { slug, parseRoots, trustKeys } from './route.js'
 import { tg, sendText, urlButton, keyboard } from './telegram.js'
 
 const [sub, ...rest] = process.argv.slice(2)
@@ -85,6 +85,7 @@ async function setup() {
   console.log(`   ✓ paired with ${pair.from.first_name} in "${pair.chat.title}"`)
 
   await sendText(hubToken, pair.chat.id, 'Paired ✅  For each agent bot below: tap "Open chat" (then Start) and "Add to group".')
+  await sendText(hubToken, pair.chat.id, 'First, open the hub bot too:', keyboard([[urlButton('Open hub chat', `https://t.me/${hubMe.username}?start=hi`)]]))
   for (const b of pool.bots) {
     await sendText(hubToken, pair.chat.id, `@${b.username}`, keyboard([[urlButton('Open chat', `https://t.me/${b.username}?start=hi`), urlButton('Add to group', `https://t.me/${b.username}?startgroup=hi`)]]))
   }
@@ -120,6 +121,8 @@ async function start(args) {
   fs.writeFileSync(settingsFile, JSON.stringify({ permissions: { allow: ['mcp__tg__reply'] }, hooks: { Stop: [{ hooks: [{ type: 'command', command: hook }] }] } }))
 
   const env = { ...process.env, CREW_AGENT: name, CREW_FOLDER: folder }
+  const remote = env.CREW_REMOTE === '1' // started from the phone, so nobody may be at this window
+  delete env.CREW_REMOTE
   SESSION_VARS.forEach((v) => delete env[v])
 
   const claudeArgs = ['--mcp-config', mcpFile, '--dangerously-load-development-channels', 'server:tg', '--settings', settingsFile, '--permission-mode', 'auto', ...args]
@@ -128,10 +131,26 @@ async function start(args) {
   // Pass the terminal straight through, and press Enter once on the dev-channel warning.
   let seen = ''
   let confirmed = false
+  let trustAsked = false
+  let answeredHere = false
+
+  // Asks on Telegram; the user's tap decides. A key pressed in this window wins instead.
+  async function askTrust(keys) {
+    const { answer } = await post(BRIDGE_PORT, '/trust', { name, folder }, 10 * 60 * 1000).catch(() => ({}))
+    if (answeredHere) return
+    if (answer === 'no') return p.kill()
+    if (answer === 'yes') keys.forEach((key, i) => setTimeout(() => p.write(key), i * 200))
+  }
+
   p.onData((data) => {
     process.stdout.write(data)
     if (confirmed) return
     seen = (seen + data.replace(/\x1b\[[0-9;?<>]*[a-zA-Z]/g, '').replace(/\s/g, '')).slice(-5000)
+    const keys = remote && !trustAsked ? trustKeys(seen) : null
+    if (keys) {
+      trustAsked = true
+      askTrust(keys)
+    }
     if (seen.includes('Iamusingthisforlocaldevelopment')) {
       confirmed = true
       setTimeout(() => p.write('\r'), 300)
@@ -139,7 +158,10 @@ async function start(args) {
   })
   p.onExit(({ exitCode }) => process.exit(exitCode))
   if (process.stdin.isTTY) process.stdin.setRawMode(true)
-  process.stdin.on('data', (d) => p.write(d.toString()))
+  process.stdin.on('data', (d) => {
+    if (trustAsked) answeredHere = true
+    p.write(d.toString())
+  })
   process.stdout.on('resize', () => p.resize(process.stdout.columns, process.stdout.rows))
 }
 

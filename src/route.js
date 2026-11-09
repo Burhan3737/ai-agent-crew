@@ -53,6 +53,16 @@ export function parseRoots(text, exists = fs.existsSync) {
   return { roots: all.filter(exists), missing: all.filter((r) => !exists(r)) }
 }
 
+// Which keys answer "Yes" on Claude Code's folder-trust prompt, or null if it isn't showing.
+// The screen text has had its spaces removed. Never guesses: no visible selection, no keys.
+export function trustKeys(screen) {
+  if (!screen.includes('Itrustthisfolder') || !screen.includes('Entertoconfirm')) return null
+  const selected = [...screen.matchAll(/❯(?:\d\.)?(Yes,Itrust|No,exit)/g)].at(-1)?.[1]
+  if (selected === 'Yes,Itrust') return ['\r']
+  if (selected === 'No,exit') return ['\x1b[B', '\r']
+  return null
+}
+
 // Immediate subfolders of each root (skipping hidden ones), sorted by name.
 export function listFolders(roots) {
   const out = []

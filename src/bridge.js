@@ -23,6 +23,8 @@ const CREW_CMD = path.join(ROOT, 'bin', 'crew.cmd')
 
 const agents = new Map() // name -> { folder, port, pid, lastSeen, replied }
 const permissions = new Map() // request_id -> agent name
+const trustAsks = new Map() // id -> function that answers a waiting folder-trust question
+let trustId = 0
 let newRequest = { id: 0, name: null, folders: [] } // the last /new folder list shown
 let resumeRequest = { id: 0, name: null, folder: null, items: [] } // the last conversation list shown
 
@@ -90,7 +92,7 @@ function launch(folder, name, claudeArgs = []) {
   name = slug(name)
   if (!fs.existsSync(folder)) return false
   const cmd = `/c start "${name}" /min cmd /c ""${CREW_CMD}" ${name} ${claudeArgs.join(' ')}"`
-  spawn('cmd.exe', [cmd], { cwd: folder, detached: true, stdio: 'ignore', windowsVerbatimArguments: true })
+  spawn('cmd.exe', [cmd], { cwd: folder, detached: true, stdio: 'ignore', windowsVerbatimArguments: true, env: { ...process.env, CREW_REMOTE: '1' } })
     .on('error', (err) => log('launch failed: ' + err.message))
     .unref()
   log(`launch ${name} in ${folder}`)
@@ -122,6 +124,18 @@ const routes = {
     const text = `⚠️ ${name} wants to use ${tool_name}: ${description}\n\n${cut(input_preview, 1500)}`
     await toUser(name, text, keyboard([[button('✅ Allow', `p:${request_id}:a`), button('❌ Deny', `p:${request_id}:d`)]]))
     return { ok: true }
+  },
+  // Asked by crew when an agent started from the phone is stuck on Claude's trust prompt.
+  // Goes through the hub in the group, because a brand-new agent has no bot yet.
+  async '/trust'({ name, folder }) {
+    const id = String(++trustId)
+    const answer = new Promise((resolve) => {
+      trustAsks.set(id, resolve)
+      setTimeout(() => trustAsks.delete(id) && resolve('timeout'), 9 * 60 * 1000)
+    })
+    const text = `🔒 ${name} needs you to trust this folder before it can start:\n${folder}\n\nClaude will be able to read, edit and run files there.`
+    await hubSay(cfg.groupId, text, keyboard([[button('✅ Trust', `t:${id}:y`), button('❌ Cancel', `t:${id}:n`)]]))
+    return { answer: await answer }
   },
   async '/hook'({ name, last_assistant_message }) {
     const a = agents.get(name)
@@ -320,6 +334,15 @@ async function onButton(token, cq) {
     if (!folder) return answer('I do not know its folder — use /new')
     if (!launch(folder, value)) return answer(`Folder not found: ${folder}`)
     return answer(`Starting ${value}…`)
+  }
+
+  if (kind === 't') {
+    const resolve = trustAsks.get(value)
+    if (!resolve) return answer('Already answered or expired')
+    trustAsks.delete(value)
+    resolve(extra === 'y' ? 'yes' : 'no')
+    await safe(tg(token, 'editMessageText', { chat_id: chat, message_id: cq.message.message_id, text: `${cq.message.text}\n\n→ ${extra === 'y' ? '✅ Trusted' : '❌ Cancelled'}` }))
+    return answer(extra === 'y' ? 'Trusted' : 'Cancelled')
   }
 
   if (kind === 'h') {

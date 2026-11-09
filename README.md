@@ -22,7 +22,8 @@ Phone (Telegram)  <->  bridge (this PC)  <->  each Claude session started with `
 3. Run `crew setup`, paste the tokens when asked, and list the folders that hold your projects.
 4. When asked, create a Telegram group (e.g. "My Crew"), add the hub bot, and send `/pair`
    in the group.
-5. In the group, the hub posts two buttons for every agent bot. Tap **Open chat** (then Start)
+5. In the group, the hub posts a button to open its own chat (tap it, then Start), and two buttons for
+   every agent bot. Tap **Open chat** (then Start)
    and **Add to group** once for each one.
 
 ## Daily use
@@ -65,6 +66,8 @@ The list covers everything in that folder, including conversations from plain `c
   minimized window. Closing the window stops that agent.
 - If you run out of bots, a new agent still starts and talks through the hub
   (`/to <name> …`) until you `/addbot`.
+- The first time you start an agent from the phone in a folder Claude hasn't been told to trust, the
+  hub asks in the group, with **Trust** and **Cancel** buttons. Cancel closes that agent.
 - `crew status` shows the bridge and agents. `crew stop-bridge` stops the bridge. The next `crew` you run
   starts it again. If the PC restarts, run `crew` once (or start an agent) to bring it back.
 - One session per name. Folders with the same name in both roots (e.g. two `api` folders) would
