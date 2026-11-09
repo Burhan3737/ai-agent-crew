@@ -1,0 +1,5 @@
+.agentTempWork/
+node_modules/
+dist/
+.state/
+.claude/
