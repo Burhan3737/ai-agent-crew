@@ -24,9 +24,10 @@ Phone (Telegram)  <->  bridge (this PC)  <->  each Claude session started with `
    For every **agent** bot, also send `/setprivacy` to @BotFather, pick the bot and choose **Disable**.
    Without this, tagging the bot in the group doesn't work. Only @BotFather can change this setting.
    Leave the hub bot as it is.
-3. Run `crew setup`, paste the tokens when asked, and list the folders that hold your projects.
+3. Run `crew setup`, paste the tokens when asked, list the folders that hold your projects, and choose
+   whether Crew starts when you sign in to Windows.
 4. When asked, create a Telegram group (e.g. "My Crew"), add the hub bot, and send
-   `/pair@your_hub_bot` in the group, using your hub bot's username.
+   the `/pair` line that setup shows you. It includes a one-time code, so nobody else can pair with your bot.
 5. In the group, the hub posts a button to open its own chat (tap it, then Start), and two buttons for
    every agent bot. Tap **Open chat** (then Start)
    and **Add to group** once for each one.
@@ -61,6 +62,12 @@ last 8 conversations from that agent's folder, newest first, with date and first
 it reopens with its full history, on the same bot. **🆕 Start fresh** starts a new conversation instead.
 The list covers everything in that folder, including conversations from plain `claude` or another agent there.
 
+**After a restart:** the PC has to be on and signed in. If start at sign-in is on, the bridge starts by
+itself. If agents were cut off by the shutdown, the hub posts **Crew is back** in the group with
+**♻️ Restore all** and **Pick which**. Each agent reopens in the conversation it was having and waits for
+your next message. Agents you closed yourself aren't offered. This message appears once, and `/resume`
+still works afterwards. Without start at sign-in, run `crew <name>` once on the PC to start the bridge.
+
 **What you'll get:**
 - the agent's replies;
 - **✅ done** messages when it finishes something you started at the PC;
@@ -74,7 +81,7 @@ The list covers everything in that folder, including conversations from plain `c
 - The first time you start an agent from the phone in a folder Claude hasn't been told to trust, the
   hub asks in the group, with **Trust** and **Cancel** buttons. Cancel closes that agent.
 - `crew status` shows the bridge and agents. `crew stop-bridge` stops the bridge. The next `crew` you run
-  starts it again. If the PC restarts, run `crew` once (or start an agent) to bring it back.
+  starts it again. `crew autostart` starts it whenever you sign in (`crew autostart off` to stop that).
 - One session per name. Folders with the same name in both roots (e.g. two `api` folders) would
   share one bot, so give one of them its own name: `crew work-api`.
 - **Bots added later with `/addbot` need the `/setprivacy` → Disable step too.** If a bot is already in
@@ -84,8 +91,10 @@ The list covers everything in that folder, including conversations from plain `c
 - Instead of `/setprivacy`, you can make the bot a group admin, because admins receive group messages
   anyway. This can turn a basic group into a supergroup, which changes its ID. If that happens, run
   `crew stop-bridge`, then `crew setup` again.
-- `/new` only offers folders inside the project folders you chose during setup. Run `crew setup`
-  again to change them.
+- `/new` only offers folders inside the project folders you chose during setup. Run `crew folders` to change them.
+
+**Changing your setup:** `crew setup` shows what's configured. `crew setup --reset` runs it again, and
+pressing Enter keeps each answer.
 
 ## Safety
 

@@ -32,6 +32,10 @@ export const saveConfig = (cfg) => writeJson('config.json', cfg)
 export const loadPool = () => readJson('pool.json', { bots: [], folders: {} })
 export const savePool = (pool) => writeJson('pool.json', pool)
 
+// Agents to offer back after a shutdown: { name: { folder, sessionId } }. Only the bridge writes it.
+export const loadRunning = () => readJson('running.json', {})
+export const saveRunning = (running) => writeJson('running.json', running)
+
 // Shared secret between bridge, channels and hooks.
 export function getSecret() {
   const f = file('secret')

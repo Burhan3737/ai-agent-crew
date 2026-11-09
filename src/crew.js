@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // crew — start a Claude Code session that is reachable from Telegram.
 //   crew [name] [claude args...]   start an agent in the current folder
-//   crew setup | status | stop-bridge
+//   crew setup [--reset] | folders | autostart [off] | status | stop-bridge
 import fs from 'node:fs'
 import path from 'node:path'
 import { spawn } from 'node:child_process'
@@ -9,15 +9,29 @@ import readline from 'node:readline/promises'
 import pty from 'node-pty'
 import { ROOT, STATE_DIR, BRIDGE_PORT, loadConfig, saveConfig, loadPool, savePool, post } from './state.js'
 import { addBot } from './pool.js'
-import { slug, parseRoots, trustKeys } from './route.js'
+import { slug, parseRoots, nextTrustKey, setupSummary, pairCode, isPairMessage } from './route.js'
+import { isAutostartOn, enableAutostart, disableAutostart } from './autostart.js'
 import { tg, sendText, urlButton, keyboard } from './telegram.js'
 
 const [sub, ...rest] = process.argv.slice(2)
-const ask = async (q) => {
-  const rl = readline.createInterface({ input: process.stdin, output: process.stdout })
-  const answer = await rl.question(q)
-  rl.close()
-  return answer.trim()
+
+// One reader for the whole run, so several lines pasted at once aren't lost.
+let reader
+let lines
+async function ask(question) {
+  if (!reader) {
+    reader = readline.createInterface({ input: process.stdin })
+    lines = reader[Symbol.asyncIterator]()
+  }
+  process.stdout.write(question)
+  const { value, done } = await lines.next()
+  if (done) process.exit(1)
+  return value.trim()
+}
+
+function doneAsking() {
+  reader?.close()
+  reader = null
 }
 
 // Returns the agent list if the bridge is running, otherwise null.
@@ -35,40 +49,59 @@ async function ensureBridge() {
 
 // ---------- crew setup ----------
 
-async function setup() {
-  if (await bridgeAgents()) return console.log('Stop the bridge first: crew stop-bridge')
-  console.log('1. In Telegram, open @BotFather and create a "hub" bot (/newbot). Paste its token.')
-  const hubToken = await ask('Hub bot token: ')
-  const hubMe = await tg(hubToken, 'getMe')
-  console.log(`   ✓ @${hubMe.username}`)
-
-  console.log('\n2. Create a few more bots (one per agent, 5 is a good start). Paste one token per line, empty line to finish.')
-  const pool = loadPool()
+async function askRoots(previous, label = '') {
+  console.log(label + 'Which folders hold your projects? /new can only start agents inside these.')
   for (;;) {
-    const token = await ask('Agent bot token: ')
-    if (!token) break
-    try {
-      const me = await tg(token, 'getMe')
-      addBot(pool, token, me.username)
-      console.log(`   ✓ @${me.username}`)
-    } catch {
-      console.log('   ✗ that token did not work')
-    }
-  }
-  savePool(pool)
-
-  const old = loadConfig()
-  const previous = old?.roots?.join(',')
-  console.log('\n3. Which folders hold your projects? /new can only start agents inside these.')
-  let roots = []
-  while (!roots.length) {
     const answer = (await ask(`Full paths, separated by commas${previous ? ` [${previous}]` : ''}: `)) || previous || ''
     const parsed = parseRoots(answer)
     parsed.missing.forEach((m) => console.log(`   ✗ not found: ${m}`))
-    roots = parsed.roots
+    if (parsed.roots.length) return parsed.roots
+  }
+}
+
+async function showSetup(cfg) {
+  const title = await tg(cfg.hubToken, 'getChat', { chat_id: cfg.groupId }).then((c) => c.title, () => '(could not reach Telegram)')
+  console.log(setupSummary(cfg, title, loadPool().bots.length, isAutostartOn()))
+}
+
+async function setup() {
+  const old = loadConfig()
+  if (old && !rest.includes('--reset')) return showSetup(old)
+  if (await bridgeAgents()) return console.log('Stop the bridge first: crew stop-bridge')
+
+  console.log('1. In Telegram, open @BotFather and create a "hub" bot (/newbot). Paste its token.')
+  let hubToken
+  let hubMe
+  while (!hubMe) {
+    hubToken = (await ask(`Hub bot token${old ? ' [Enter to keep current]' : ''}: `)) || old?.hubToken
+    if (hubToken) hubMe = await tg(hubToken, 'getMe').catch(() => console.log('   ✗ that token did not work'))
+  }
+  console.log(`   ✓ @${hubMe.username}`)
+
+  const pool = loadPool()
+  console.log(`\n2. Create a bot for each agent (5 is a good start). You have ${pool.bots.length}. Paste one token per line, empty line to finish.`)
+  for (;;) {
+    const token = await ask('Agent bot token: ')
+    if (!token) break
+    const me = token === hubToken ? null : await tg(token, 'getMe').catch(() => null)
+    if (me) addBot(pool, token, me.username)
+    console.log(me ? `   ✓ @${me.username}` : '   ✗ that token did not work')
+  }
+  savePool(pool)
+
+  const roots = await askRoots(old?.roots?.join(','), '\n3. ')
+
+  const auto = await ask('\n4. Start Crew automatically when you sign in to Windows? [Y/n]: ')
+  auto.toLowerCase().startsWith('n') ? disableAutostart() : enableAutostart()
+
+  // Same hub bot: its group still works, so only pair again if asked to.
+  if (old?.hubToken === hubToken && !(await ask('\n5. Pair a different group? [y/N]: ')).toLowerCase().startsWith('y')) {
+    saveConfig({ ...old, roots })
+    return console.log('\nDone. Your settings are saved.')
   }
 
-  console.log('\n4. Create a Telegram group (e.g. "My Crew"), add the hub bot to it, and send /pair in the group.')
+  const code = pairCode()
+  console.log(`\n5. Create a Telegram group (e.g. "My Crew"), add the hub bot to it, and send this in the group:\n\n   /pair@${hubMe.username} ${code}\n`)
   console.log('   Waiting for /pair ...')
   let offset = 0
   let pair
@@ -77,7 +110,7 @@ async function setup() {
     for (const u of updates) {
       offset = u.update_id + 1
       const m = u.message
-      if (m?.text?.startsWith('/pair') && m.chat.type !== 'private') pair = m
+      if (isPairMessage(m, code)) pair = m
     }
   }
   await tg(hubToken, 'getUpdates', { offset, timeout: 0 }) // mark /pair as handled
@@ -111,6 +144,8 @@ async function start(args) {
     name = slug((await ask(`"${name}" is already running. Name for this agent [${name}-2]: `)) || `${name}-2`)
   }
 
+  doneAsking()
+
   // Per-agent config files for Claude Code.
   const dir = path.join(STATE_DIR, 'sessions')
   fs.mkdirSync(dir, { recursive: true })
@@ -135,21 +170,30 @@ async function start(args) {
   let answeredHere = false
 
   // Asks on Telegram; the user's tap decides. A key pressed in this window wins instead.
-  async function askTrust(keys) {
+  async function askTrust() {
     const { answer } = await post(BRIDGE_PORT, '/trust', { name, folder }, 10 * 60 * 1000).catch(() => ({}))
     if (answeredHere) return
     if (answer === 'no') return p.kill()
-    if (answer === 'yes') keys.forEach((key, i) => setTimeout(() => p.write(key), i * 200))
+    if (answer === 'yes') pressYes()
+  }
+
+  // Looks at the screen before every key, because the prompt can reset its selection while it's up.
+  function pressYes() {
+    let tries = 0
+    const timer = setInterval(() => {
+      const key = nextTrustKey(seen)
+      if (key) p.write(key)
+      if (!key || key === '\r' || ++tries > 20) clearInterval(timer)
+    }, 500)
   }
 
   p.onData((data) => {
     process.stdout.write(data)
     if (confirmed) return
     seen = (seen + data.replace(/\x1b\[[0-9;?<>]*[a-zA-Z]/g, '').replace(/\s/g, '')).slice(-5000)
-    const keys = remote && !trustAsked ? trustKeys(seen) : null
-    if (keys) {
+    if (remote && !trustAsked && nextTrustKey(seen)) {
       trustAsked = true
-      askTrust(keys)
+      askTrust()
     }
     if (seen.includes('Iamusingthisforlocaldevelopment')) {
       confirmed = true
@@ -162,13 +206,28 @@ async function start(args) {
     if (trustAsked) answeredHere = true
     p.write(d.toString())
   })
+  process.stdin.resume()
   process.stdout.on('resize', () => p.resize(process.stdout.columns, process.stdout.rows))
 }
 
 // ---------- main ----------
 
-if (sub === 'setup') await setup()
-else if (sub === 'status') {
+if (sub === 'setup') {
+  await setup()
+  doneAsking()
+} else if (sub === 'folders') {
+  const cfg = loadConfig()
+  if (!cfg) console.log('Not set up yet. Run: crew setup')
+  else {
+    saveConfig({ ...cfg, roots: await askRoots(cfg.roots.join(',')) })
+    doneAsking()
+    console.log('Saved.')
+  }
+} else if (sub === 'autostart') {
+  if (rest[0] === 'off') disableAutostart()
+  else enableAutostart()
+  console.log(`Start at sign-in is ${isAutostartOn() ? 'on' : 'off'}.`)
+} else if (sub === 'status') {
   const agents = await bridgeAgents()
   if (!agents) console.log('Bridge is not running.')
   else {

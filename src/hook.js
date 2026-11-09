@@ -6,7 +6,7 @@ let input = ''
 for await (const chunk of process.stdin) input += chunk
 
 try {
-  const { last_assistant_message } = JSON.parse(input || '{}')
-  await post(BRIDGE_PORT, '/hook', { name: process.env.CREW_AGENT, last_assistant_message }, 3000)
+  const { last_assistant_message, session_id } = JSON.parse(input || '{}')
+  await post(BRIDGE_PORT, '/hook', { name: process.env.CREW_AGENT, last_assistant_message, session_id }, 3000)
 } catch {}
 process.exit(0)

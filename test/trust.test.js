@@ -1,26 +1,32 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { trustKeys } from '../src/route.js'
+import { nextTrustKey } from '../src/route.js'
 
 const DOWN = '\x1b[B'
 const ENTER = '\r'
 
-test('no trust prompt on screen means no keys', () => {
-  assert.equal(trustKeys('Iamusingthisforlocaldevelopment'), null)
+test('no trust prompt on screen means no key', () => {
+  assert.equal(nextTrustKey('Iamusingthisforlocaldevelopment'), null)
 })
 
 test('waits until the prompt is fully drawn', () => {
-  assert.equal(trustKeys('Quicksafetycheck❯No,exitYes,Itrustthisfolder'), null)
+  assert.equal(nextTrustKey('Quicksafetycheck❯No,exitYes,Itrustthisfolder'), null)
 })
 
-test('moves down to Yes when No is selected', () => {
-  assert.deepEqual(trustKeys('❯No,exitYes,ItrustthisfolderEntertoconfirm'), [DOWN, ENTER])
+test('moves down when No is selected', () => {
+  assert.equal(nextTrustKey('❯No,exitYes,ItrustthisfolderEntertoconfirm'), DOWN)
 })
 
-test('just confirms when Yes is already selected', () => {
-  assert.deepEqual(trustKeys('❯1.Yes,Itrustthisfolder2.No,exitEntertoconfirm'), [ENTER])
+test('confirms only when Yes is selected', () => {
+  assert.equal(nextTrustKey('❯1.Yes,Itrustthisfolder2.No,exitEntertoconfirm'), ENTER)
+})
+
+test('goes by the latest drawing of the screen', () => {
+  const first = '❯No,exitYes,ItrustthisfolderEntertoconfirm'
+  assert.equal(nextTrustKey(first + 'No,exit❯Yes,Itrustthisfolder'), ENTER)
+  assert.equal(nextTrustKey(first + 'No,exit❯Yes,Itrustthisfolder❯No,exitYes,Itrustthisfolder'), DOWN) // the prompt reset itself
 })
 
 test('unknown selection presses nothing', () => {
-  assert.equal(trustKeys('Yes,Itrustthisfolder No,exit Entertoconfirm'), null)
+  assert.equal(nextTrustKey('Yes,Itrustthisfolder No,exit Entertoconfirm'), null)
 })

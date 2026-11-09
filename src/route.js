@@ -1,5 +1,6 @@
 // Pure helpers for deciding what an incoming Telegram update means.
 import fs from 'node:fs'
+import crypto from 'node:crypto'
 import path from 'node:path'
 
 // Only the paired user, in their own private chat or the paired group, is obeyed.
@@ -53,14 +54,49 @@ export function parseRoots(text, exists = fs.existsSync) {
   return { roots: all.filter(exists), missing: all.filter((r) => !exists(r)) }
 }
 
-// Which keys answer "Yes" on Claude Code's folder-trust prompt, or null if it isn't showing.
-// The screen text has had its spaces removed. Never guesses: no visible selection, no keys.
-export function trustKeys(screen) {
+// The next key towards "Yes" on Claude Code's folder-trust prompt, or null if it isn't showing.
+// The screen text has had its spaces removed. Goes by the latest drawing, and never guesses.
+export function nextTrustKey(screen) {
   if (!screen.includes('Itrustthisfolder') || !screen.includes('Entertoconfirm')) return null
   const selected = [...screen.matchAll(/❯(?:\d\.)?(Yes,Itrust|No,exit)/g)].at(-1)?.[1]
-  if (selected === 'Yes,Itrust') return ['\r']
-  if (selected === 'No,exit') return ['\x1b[B', '\r']
+  if (selected === 'Yes,Itrust') return '\r'
+  if (selected === 'No,exit') return '\x1b[B'
   return null
+}
+
+// Bots are public, so pairing needs a code that only appears on the owner's screen.
+export const pairCode = () => crypto.randomBytes(3).toString('hex').toUpperCase()
+
+export function isPairMessage(message, code) {
+  if (message?.chat?.type === 'private') return false
+  const m = String(message?.text ?? '').trim().match(/^\/pair(?:@\w+)?\s+(\S+)$/i)
+  return m?.[1].toUpperCase() === code
+}
+
+// Agents the bridge remembers as running that didn't come back.
+export const missingAgents = (running, isOnline) =>
+  Object.entries(running)
+    .filter(([name]) => !isOnline(name))
+    .map(([name, agent]) => ({ name, ...agent }))
+
+// Claude arguments to reopen a conversation. An id goes on a command line, so it must look like one.
+export const resumeArgs = (id) =>
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(id ?? '') ? ['--resume', id] : []
+
+export function setupSummary(cfg, groupTitle, botCount, autostartOn) {
+  return [
+    'Crew is already set up.',
+    `  Hub bot: @${cfg.hubUsername}`,
+    `  Group: ${groupTitle}`,
+    `  Agent bots: ${botCount}`,
+    `  Project folders: ${cfg.roots.join(', ')}`,
+    `  Start at sign-in: ${autostartOn ? 'on' : 'off'}`,
+    '',
+    'To start over: crew setup --reset',
+    'To change project folders: crew folders',
+    'To change start at sign-in: crew autostart, or crew autostart off',
+    'To add a bot: send /addbot <token> to the hub',
+  ].join('\n')
 }
 
 // Immediate subfolders of each root (skipping hidden ones), sorted by name.

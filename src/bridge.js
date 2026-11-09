@@ -4,9 +4,9 @@ import http from 'node:http'
 import fs from 'node:fs'
 import path from 'node:path'
 import { spawn, execFile } from 'node:child_process'
-import { ROOT, STATE_DIR, BRIDGE_PORT, loadConfig, loadPool, savePool, getSecret, post } from './state.js'
+import { ROOT, STATE_DIR, BRIDGE_PORT, loadConfig, loadPool, savePool, loadRunning, saveRunning, getSecret, post } from './state.js'
 import { botFor, bindNew, addBot, retire } from './pool.js'
-import { isFromOwner, parseHub, groupText, listFolders, folderFromIndex, slug, cut } from './route.js'
+import { isFromOwner, parseHub, groupText, listFolders, folderFromIndex, slug, cut, missingAgents, resumeArgs } from './route.js'
 import { tg, sendText, poll, button, urlButton, keyboard } from './telegram.js'
 import { listConversations } from './history.js'
 
@@ -22,6 +22,8 @@ const secret = getSecret()
 const CREW_CMD = path.join(ROOT, 'bin', 'crew.cmd')
 
 const agents = new Map() // name -> { folder, port, pid, lastSeen, replied }
+const running = loadRunning() // name -> { folder, sessionId }: what to offer back after a shutdown
+let cutOff = [] // agents offered by the last "Crew is back" message
 const permissions = new Map() // request_id -> agent name
 const trustAsks = new Map() // id -> function that answers a waiting folder-trust question
 let trustId = 0
@@ -63,6 +65,8 @@ async function forward(name, text, chatId) {
 
 async function comeOnline(name, folder) {
   pool.folders[name] = folder
+  running[name] = { folder, sessionId: running[name]?.sessionId ?? null }
+  saveRunning(running)
   let bot = botFor(pool, name)
   if (!bot) {
     bot = bindNew(pool, name)
@@ -79,6 +83,12 @@ async function comeOnline(name, folder) {
 
 async function goOffline(name) {
   agents.delete(name)
+  // Wait before forgetting it: during a Windows shutdown, agents close "cleanly" too.
+  setTimeout(() => {
+    if (agents.has(name)) return
+    delete running[name]
+    saveRunning(running)
+  }, 20000)
   log(`offline ${name}`)
   await toUser(name, `🔴 ${name} went offline`)
 }
@@ -137,9 +147,13 @@ const routes = {
     await hubSay(cfg.groupId, text, keyboard([[button('✅ Trust', `t:${id}:y`), button('❌ Cancel', `t:${id}:n`)]]))
     return { answer: await answer }
   },
-  async '/hook'({ name, last_assistant_message }) {
+  async '/hook'({ name, last_assistant_message, session_id }) {
     const a = agents.get(name)
     if (!a) return { ok: true }
+    if (running[name] && session_id) {
+      running[name].sessionId = session_id
+      saveRunning(running)
+    }
     if (a.replied) a.replied = false // already answered on the phone; don't notify twice
     else if (last_assistant_message) await toUser(name, '✅ ' + cut(last_assistant_message, 3500))
     return { ok: true }
@@ -217,7 +231,7 @@ async function onHub(u) {
   }
 
   if (cmd === 'new') {
-    const all = listFolders(cfg.roots)
+    const all = listFolders(loadConfig().roots) // read fresh: "crew folders" may have changed them
     const folders = all.slice(0, 60)
     newRequest = { id: newRequest.id + 1, name: first ? slug(first) : null, folders }
     const rows = []
@@ -345,6 +359,29 @@ async function onButton(token, cq) {
     return answer(extra === 'y' ? 'Trusted' : 'Cancelled')
   }
 
+  if (kind === 'a') {
+    const toOpen = cutOff.filter((a) => !online(a.name))
+    cutOff = []
+    if (!toOpen.length) return answer('Nothing left to restore')
+    toOpen.forEach((a, i) => setTimeout(() => restore(a), i * 2000)) // one at a time
+    await safe(tg(token, 'editMessageText', { chat_id: chat, message_id: cq.message.message_id, text: `♻️ Restoring ${toOpen.map((a) => a.name).join(', ')}…` }))
+    return answer('Restoring…')
+  }
+
+  if (kind === 'w') {
+    if (!cutOff.length) return answer('Nothing left to restore')
+    await answer('')
+    return safe(sendText(token, chat, 'Restore which?', keyboard(cutOff.map((a) => [button(a.name, `b:${a.name}`)]))))
+  }
+
+  if (kind === 'b') {
+    const agent = cutOff.find((a) => a.name === value)
+    if (!agent || online(value)) return answer('Already restored or expired')
+    cutOff = cutOff.filter((a) => a !== agent)
+    restore(agent)
+    return answer(`Restoring ${value}…`)
+  }
+
   if (kind === 'h') {
     await answer('')
     return showConversations(token, chat, value)
@@ -387,6 +424,34 @@ async function onButton(token, cq) {
   return answer('')
 }
 
+// Reopens an agent that was cut off, in the conversation it was having.
+function restore({ name, folder, sessionId }) {
+  running[name] = { folder, sessionId }
+  saveRunning(running)
+  if (!launch(folder, name, resumeArgs(sessionId))) hubSay(cfg.groupId, `Could not restore ${name}: folder not found.`)
+}
+
+// After a restart: agents that were running and didn't come back get offered, once.
+// (Agents that survived a bridge restart re-register within 15 seconds, so it waits for those.)
+async function offerRestore() {
+  cutOff = missingAgents(running, online)
+  if (!cutOff.length) return
+  const text = `🟢 Crew is back. ${cutOff.length} agent(s) were running before: ${cutOff.map((a) => a.name).join(', ')}`
+  const buttons = keyboard([[button('♻️ Restore all', 'a:all'), button('Pick which', 'w:all')]])
+  // Right after sign-in the internet may not be up yet, so keep trying.
+  for (;;) {
+    try {
+      await sendText(hub, cfg.groupId, text, buttons)
+      break
+    } catch (err) {
+      log('restore offer waiting: ' + err.message)
+      await new Promise((r) => setTimeout(r, 5000))
+    }
+  }
+  cutOff.forEach((a) => delete running[a.name]) // anything not restored is still reachable with /resume
+  saveRunning(running)
+}
+
 // Shows an agent's past conversations as buttons, newest first.
 function showConversations(token, chat, name) {
   const say = (text, extra) => safe(sendText(token, chat, text, extra))
@@ -420,6 +485,7 @@ function startPolling(bot) {
 server.listen(BRIDGE_PORT, '127.0.0.1', () => {
   fs.writeFileSync(path.join(STATE_DIR, 'bridge.pid'), String(process.pid))
   log(`bridge started (pid ${process.pid})`)
+  setTimeout(offerRestore, 20000)
   // Command menu for the hub. Picking a command from it adds @hub, so it works in the group too.
   const commands = Object.entries({
     list: 'Agents — tap one to open its chat',
