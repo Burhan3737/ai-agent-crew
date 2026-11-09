@@ -18,10 +18,15 @@ Phone (Telegram)  <->  bridge (this PC)  <->  each Claude session started with `
    Run the same command later to update.
 2. In Telegram, open **@BotFather** and create bots with `/newbot`:
    - one **hub** bot (e.g. "Crew Hub"): it handles commands;
-   - a few **agent** bots (5 is a good start). Each agent gets one bot for good.
+   - a few **agent** bots (5 is a good start). Each agent gets one bot for good, so you need at
+     least 2 bots in total.
+
+   For every **agent** bot, also send `/setprivacy` to @BotFather, pick the bot and choose **Disable**.
+   Without this, tagging the bot in the group doesn't work. Only @BotFather can change this setting.
+   Leave the hub bot as it is.
 3. Run `crew setup`, paste the tokens when asked, and list the folders that hold your projects.
-4. When asked, create a Telegram group (e.g. "My Crew"), add the hub bot, and send `/pair`
-   in the group.
+4. When asked, create a Telegram group (e.g. "My Crew"), add the hub bot, and send
+   `/pair@your_hub_bot` in the group, using your hub bot's username.
 5. In the group, the hub posts a button to open its own chat (tap it, then Start), and two buttons for
    every agent bot. Tap **Open chat** (then Start)
    and **Add to group** once for each one.
@@ -72,8 +77,13 @@ The list covers everything in that folder, including conversations from plain `c
   starts it again. If the PC restarts, run `crew` once (or start an agent) to bring it back.
 - One session per name. Folders with the same name in both roots (e.g. two `api` folders) would
   share one bot, so give one of them its own name: `crew work-api`.
-- If an agent bot doesn't react to `@mentions` in the group, open @BotFather → `/setprivacy` →
-  pick that bot → **Disable**. It still only acts on messages that mention it or reply to it.
+- **Bots added later with `/addbot` need the `/setprivacy` → Disable step too.** If a bot is already in
+  the group when you change it, remove the bot from the group and add it back, or the change won't
+  take effect. The bot can then see group messages, but Crew only acts on your messages that tag it
+  or reply to it.
+- Instead of `/setprivacy`, you can make the bot a group admin, because admins receive group messages
+  anyway. This can turn a basic group into a supergroup, which changes its ID. If that happens, run
+  `crew stop-bridge`, then `crew setup` again.
 - `/new` only offers folders inside the project folders you chose during setup. Run `crew setup`
   again to change them.
 
