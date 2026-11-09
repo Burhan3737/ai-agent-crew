@@ -8,7 +8,7 @@ import readline from 'node:readline/promises'
 import pty from 'node-pty'
 import { ROOT, STATE_DIR, BRIDGE_PORT, loadConfig, saveConfig, loadPool, savePool, post } from './state.js'
 import { addBot } from './pool.js'
-import { slug } from './route.js'
+import { slug, parseRoots } from './route.js'
 import { tg, sendText, urlButton, keyboard } from './telegram.js'
 
 const [sub, ...rest] = process.argv.slice(2)
@@ -57,8 +57,15 @@ async function setup() {
   savePool(pool)
 
   const old = loadConfig()
-  const defRoots = old?.roots?.join(',') || 'C:\\personalProjects,C:\\workProjects'
-  const roots = ((await ask(`\n3. Project folders for /new [${defRoots}]: `)) || defRoots).split(',').map((s) => s.trim())
+  const previous = old?.roots?.join(',')
+  console.log('\n3. Which folders hold your projects? /new can only start agents inside these.')
+  let roots = []
+  while (!roots.length) {
+    const answer = (await ask(`Full paths, separated by commas${previous ? ` [${previous}]` : ''}: `)) || previous || ''
+    const parsed = parseRoots(answer)
+    parsed.missing.forEach((m) => console.log(`   ✗ not found: ${m}`))
+    roots = parsed.roots
+  }
 
   console.log('\n4. Create a Telegram group (e.g. "My Crew"), add the hub bot to it, and send /pair in the group.')
   console.log('   Waiting for /pair ...')

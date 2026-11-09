@@ -54,9 +54,9 @@ test('listFolders lists subfolders of existing roots only', () => {
 })
 
 test('folderFromIndex rejects bad indexes', () => {
-  const list = [{ path: 'C:/personalProjects/a' }]
-  assert.equal(folderFromIndex(list, 0), 'C:/personalProjects/a')
-  assert.equal(folderFromIndex(list, '0'), 'C:/personalProjects/a')
+  const list = [{ path: 'C:/projects/a' }]
+  assert.equal(folderFromIndex(list, 0), 'C:/projects/a')
+  assert.equal(folderFromIndex(list, '0'), 'C:/projects/a')
   for (const bad of [-1, 1, 0.5, NaN, '0; rm', '', undefined]) assert.equal(folderFromIndex(list, bad), null)
 })
 
@@ -83,4 +83,11 @@ test('cut never splits an emoji', async () => {
   const { cut } = await import('../src/route.js')
   assert.equal(cut('ab😀', 3), 'ab')
   assert.equal(cut('abc', 10), 'abc')
+})
+
+test('parseRoots keeps folders that exist and reports the rest', async () => {
+  const { parseRoots } = await import('../src/route.js')
+  const exists = (p) => p !== 'C:/nope'
+  assert.deepEqual(parseRoots(' C:/a , C:/nope,, C:/b ', exists), { roots: ['C:/a', 'C:/b'], missing: ['C:/nope'] })
+  assert.deepEqual(parseRoots('', exists), { roots: [], missing: [] })
 })

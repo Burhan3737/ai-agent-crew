@@ -47,6 +47,12 @@ export function groupText(message, username) {
 // Shorten text without splitting an emoji in half (Telegram rejects broken characters).
 export const cut = (text, n) => String(text).slice(0, n).toWellFormed().replace(/�$/, '')
 
+// The project folders typed during setup: "C:\a, C:\b".
+export function parseRoots(text, exists = fs.existsSync) {
+  const all = text.split(',').map((s) => s.trim()).filter(Boolean)
+  return { roots: all.filter(exists), missing: all.filter((r) => !exists(r)) }
+}
+
 // Immediate subfolders of each root (skipping hidden ones), sorted by name.
 export function listFolders(roots) {
   const out = []

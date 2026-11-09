@@ -8,7 +8,7 @@ import { parseHub } from '../src/route.js'
 const line = (content, extra = {}) => JSON.stringify({ type: 'user', message: { content }, ...extra })
 
 test('projectDir matches how Claude names folders', () => {
-  assert.equal(path.basename(projectDir('C:/personalProjects/my.app_1', 'H')), 'C--personalProjects-my-app-1')
+  assert.equal(path.basename(projectDir('C:/projects/my.app_1', 'H')), 'C--projects-my-app-1')
 })
 
 test('firstMessage skips system noise and unwraps phone messages', () => {

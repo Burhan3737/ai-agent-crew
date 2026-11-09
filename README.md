@@ -13,12 +13,12 @@ Phone (Telegram)  <->  bridge (this PC)  <->  each Claude session started with `
 
 1. `npm install` in this folder.
 2. Put `bin` on your PATH so `crew` works everywhere. Add
-   `C:\personalProjects\claudeWhatsappAgent\bin` in *Windows Settings → System → About →
+   the full path of this project's `bin` folder in *Windows Settings → System → About →
    Advanced system settings → Environment Variables → Path*, then open a new terminal.
 3. In Telegram, open **@BotFather** and create bots with `/newbot`:
    - one **hub** bot (e.g. "Crew Hub"): it handles commands;
    - a few **agent** bots (5 is a good start). Each agent gets one bot for good.
-4. Run `crew setup` and paste the tokens when asked.
+4. Run `crew setup`, paste the tokens when asked, and list the folders that hold your projects.
 5. When asked, create a Telegram group (e.g. "My Crew"), add the hub bot, and send `/pair`
    in the group.
 6. In the group, the hub posts two buttons for every agent bot. Tap **Open chat** (then Start)
@@ -70,8 +70,8 @@ The list covers everything in that folder, including conversations from plain `c
   share one bot, so give one of them its own name: `crew work-api`.
 - If an agent bot doesn't react to `@mentions` in the group, open @BotFather → `/setprivacy` →
   pick that bot → **Disable**. It still only acts on messages that mention it or reply to it.
-- `/new` only offers folders inside the roots chosen during setup
-  (default `C:\personalProjects`, `C:\workProjects`).
+- `/new` only offers folders inside the project folders you chose during setup. Run `crew setup`
+  again to change them.
 
 ## Safety
 
