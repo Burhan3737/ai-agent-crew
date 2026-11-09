@@ -4,6 +4,9 @@
   "private": true,
   "type": "module",
   "description": "Crew: talk to your Claude Code agents from Telegram",
+  "bin": {
+    "crew": "src/crew.js"
+  },
   "scripts": {
     "test": "node --test"
   },

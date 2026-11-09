@@ -1,11 +1,12 @@
-// Where everything is stored: <repo>/.state (git-ignored).
+// Where everything is stored: the .crew folder in the user's home directory.
 import fs from 'node:fs'
 import path from 'node:path'
+import os from 'node:os'
 import crypto from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-export const STATE_DIR = process.env.CREW_STATE || path.join(ROOT, '.state') // override: tests only
+export const STATE_DIR = process.env.CREW_STATE || path.join(os.homedir(), '.crew') // override: tests only
 export const BRIDGE_PORT = Number(process.env.CREW_PORT) || 8790
 
 const file = (name) => path.join(STATE_DIR, name)

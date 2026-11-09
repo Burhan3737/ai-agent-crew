@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 // crew — start a Claude Code session that is reachable from Telegram.
 //   crew [name] [claude args...]   start an agent in the current folder
 //   crew setup | status | stop-bridge
@@ -29,7 +30,7 @@ async function ensureBridge() {
     await new Promise((r) => setTimeout(r, 250))
     if (await bridgeAgents()) return
   }
-  console.error('Could not start the bridge — see .state/bridge.log')
+  console.error('Could not start the bridge — see bridge.log in the .crew folder in your home directory')
 }
 
 // ---------- crew setup ----------

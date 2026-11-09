@@ -11,17 +11,18 @@ Phone (Telegram)  <->  bridge (this PC)  <->  each Claude session started with `
 
 ## One-time setup
 
-1. `npm install` in this folder.
-2. Put `bin` on your PATH so `crew` works everywhere. Add
-   the full path of this project's `bin` folder in *Windows Settings → System → About →
-   Advanced system settings → Environment Variables → Path*, then open a new terminal.
-3. In Telegram, open **@BotFather** and create bots with `/newbot`:
+1. Install Crew (you need Node 22 and Claude Code):
+   ```
+   npm install -g github:Burhan3737/ai-agent-crew
+   ```
+   Run the same command later to update.
+2. In Telegram, open **@BotFather** and create bots with `/newbot`:
    - one **hub** bot (e.g. "Crew Hub"): it handles commands;
    - a few **agent** bots (5 is a good start). Each agent gets one bot for good.
-4. Run `crew setup`, paste the tokens when asked, and list the folders that hold your projects.
-5. When asked, create a Telegram group (e.g. "My Crew"), add the hub bot, and send `/pair`
+3. Run `crew setup`, paste the tokens when asked, and list the folders that hold your projects.
+4. When asked, create a Telegram group (e.g. "My Crew"), add the hub bot, and send `/pair`
    in the group.
-6. In the group, the hub posts two buttons for every agent bot. Tap **Open chat** (then Start)
+5. In the group, the hub posts two buttons for every agent bot. Tap **Open chat** (then Start)
    and **Add to group** once for each one.
 
 ## Daily use
@@ -77,8 +78,7 @@ The list covers everything in that folder, including conversations from plain `c
 
 - Only your Telegram account, in your private chats and the paired group, is obeyed.
   Everything else is ignored.
-- Bot tokens and settings live in `.state/`. Never share or commit that folder (it's
-  git-ignored).
+- Bot tokens and settings live in the `.crew` folder in your home directory. Never share that folder.
 - Each session starts with Claude Code's `--dangerously-load-development-channels` flag. Custom
   channels need it during the research preview. `crew` confirms the warning screen for you.
 
