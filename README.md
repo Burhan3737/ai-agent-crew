@@ -90,11 +90,12 @@ still works afterwards. Without start at sign-in, run `crew <name>` once on the 
   or reply to it.
 - Instead of `/setprivacy`, you can make the bot a group admin, because admins receive group messages
   anyway. This can turn a basic group into a supergroup, which changes its ID. If that happens, run
-  `crew stop-bridge`, then `crew setup` again.
+  `crew setup --reset`.
 - `/new` only offers folders inside the project folders you chose during setup. Run `crew folders` to change them.
 
 **Changing your setup:** `crew setup` shows what's configured. `crew setup --reset` runs it again, and
-pressing Enter keeps each answer.
+pressing Enter keeps each answer. It stops and restarts the bridge for you and removes any agent bots
+that no longer exist. After deleting a bot in @BotFather, run it so Crew forgets that bot.
 
 ## Safety
 

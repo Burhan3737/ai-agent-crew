@@ -22,6 +22,14 @@ export function addBot(pool, token, username) {
   return bot
 }
 
+// Removes bots that no longer exist on Telegram and returns them.
+export async function dropDeadBots(pool, isDead) {
+  const dead = []
+  for (const bot of pool.bots) if (await isDead(bot.token)) dead.push(bot)
+  pool.bots = pool.bots.filter((bot) => !dead.includes(bot))
+  return dead
+}
+
 export function retire(pool, agent) {
   const bot = botFor(pool, agent)
   if (bot) bot.agent = null

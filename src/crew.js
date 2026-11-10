@@ -8,7 +8,7 @@ import { spawn } from 'node:child_process'
 import readline from 'node:readline/promises'
 import pty from 'node-pty'
 import { ROOT, STATE_DIR, BRIDGE_PORT, loadConfig, saveConfig, loadPool, savePool, post } from './state.js'
-import { addBot } from './pool.js'
+import { addBot, dropDeadBots } from './pool.js'
 import { slug, parseRoots, nextTrustKey, setupSummary, pairCode, isPairMessage } from './route.js'
 import { isAutostartOn, enableAutostart, disableAutostart } from './autostart.js'
 import { tg, sendText, urlButton, keyboard } from './telegram.js'
@@ -47,6 +47,21 @@ async function ensureBridge() {
   console.error('Could not start the bridge — see bridge.log in the .crew folder in your home directory')
 }
 
+// Returns true if it stopped a running bridge. Asks the bridge first, so it never kills a stale pid.
+async function stopBridge() {
+  if (!(await bridgeAgents())) return false
+  try {
+    process.kill(Number(fs.readFileSync(path.join(STATE_DIR, 'bridge.pid'), 'utf8')))
+  } catch {
+    return false
+  }
+  for (let i = 0; i < 20 && (await bridgeAgents()); i++) await new Promise((r) => setTimeout(r, 250))
+  return true
+}
+
+// Only Telegram's "Unauthorized" means gone: a network problem must not remove a bot.
+const isDeadToken = (token) => tg(token, 'getMe').then(() => false, (err) => /Unauthorized/.test(err.message))
+
 // ---------- crew setup ----------
 
 async function askRoots(previous, label = '') {
@@ -67,7 +82,7 @@ async function showSetup(cfg) {
 async function setup() {
   const old = loadConfig()
   if (old && !rest.includes('--reset')) return showSetup(old)
-  if (await bridgeAgents()) return console.log('Stop the bridge first: crew stop-bridge')
+  await stopBridge() // only one program can read a bot's messages at a time
 
   console.log('1. In Telegram, open @BotFather and create a "hub" bot (/newbot). Paste its token.')
   let hubToken
@@ -79,6 +94,7 @@ async function setup() {
   console.log(`   ✓ @${hubMe.username}`)
 
   const pool = loadPool()
+  for (const bot of await dropDeadBots(pool, isDeadToken)) console.log(`   ✗ removed @${bot.username} (deleted on Telegram)`)
   console.log(`\n2. Create a bot for each agent (5 is a good start). You have ${pool.bots.length}. Paste one token per line, empty line to finish.`)
   for (;;) {
     const token = await ask('Agent bot token: ')
@@ -97,7 +113,8 @@ async function setup() {
   // Same hub bot: its group still works, so only pair again if asked to.
   if (old?.hubToken === hubToken && !(await ask('\n5. Pair a different group? [y/N]: ')).toLowerCase().startsWith('y')) {
     saveConfig({ ...old, roots })
-    return console.log('\nDone. Your settings are saved.')
+    await ensureBridge()
+    return console.log('\nDone. Your settings are saved and Crew is running.')
   }
 
   const code = pairCode()
@@ -122,7 +139,8 @@ async function setup() {
   for (const b of pool.bots) {
     await sendText(hubToken, pair.chat.id, `@${b.username}`, keyboard([[urlButton('Open chat', `https://t.me/${b.username}?start=hi`), urlButton('Add to group', `https://t.me/${b.username}?startgroup=hi`)]]))
   }
-  console.log('\nDone. Tap the buttons in the group, then start an agent with: crew <name>')
+  await ensureBridge()
+  console.log('\nDone. Crew is running. Tap the buttons in the group, then send /new to the hub or run: crew <name>')
 }
 
 // ---------- crew <name> ----------
@@ -235,11 +253,5 @@ if (sub === 'setup') {
     agents.forEach((a) => console.log(`  ${a.online ? 'online ' : 'offline'}  ${a.name}  ${a.folder ?? ''}`))
   }
 } else if (sub === 'stop-bridge') {
-  if (!(await bridgeAgents())) console.log('Bridge is not running.') // never kill a stale pid
-  else try {
-    process.kill(Number(fs.readFileSync(path.join(STATE_DIR, 'bridge.pid'), 'utf8')))
-    console.log('Bridge stopped.')
-  } catch {
-    console.log('Bridge is not running.')
-  }
+  console.log((await stopBridge()) ? 'Bridge stopped.' : 'Bridge is not running.')
 } else await start(sub ? [sub, ...rest] : [])
